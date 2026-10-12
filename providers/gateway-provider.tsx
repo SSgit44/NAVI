@@ -5,6 +5,7 @@ import { AppState } from 'react-native';
 import { closeStatusTarget, ConnectionSurface } from '@/connectionStatus';
 import { FrameMetadata, LatencySummary, LatencyTracker } from '@/latency';
 import { discoverGateway } from '@/services/gateway-discovery';
+import { DEFAULT_GATEWAY_ADDRESS, normalizeGatewayHttpBase } from '@/services/gateway-address-options';
 
 export type GatewayState = '未连接' | '连接中' | '已连接' | '错误';
 export type DiscoveryState = 'searching' | 'found' | 'manual';
@@ -57,14 +58,7 @@ export type GatewayContextValue = {
 
 declare const process: { env: { EXPO_PUBLIC_GATEWAY_ADDRESS?: string } };
 
-const GATEWAY_PORT = 8080;
-const FALLBACK_GATEWAY_ADDRESS = `192.168.1.100:${GATEWAY_PORT}`;
 const LAST_GATEWAY_STORAGE_KEY = 'last-jetson-gateway-address';
-
-function normalizeHttpBase(value: string): string {
-  const trimmed = value.trim().replace(/\/$/, '');
-  return trimmed.startsWith('http://') || trimmed.startsWith('https://') ? trimmed : `http://${trimmed}`;
-}
 
 function websocketUrl(httpBase: string, topic?: ImageTopic): string {
   const query = topic
@@ -74,17 +68,17 @@ function websocketUrl(httpBase: string, topic?: ImageTopic): string {
 }
 
 const configuredAddress = process.env.EXPO_PUBLIC_GATEWAY_ADDRESS?.trim();
-const initialAddress = configuredAddress || FALLBACK_GATEWAY_ADDRESS;
+const initialAddress = configuredAddress || DEFAULT_GATEWAY_ADDRESS;
 
 const GatewayContext = React.createContext<GatewayContextValue | null>(null);
 
 export function GatewayProvider({ children }: React.PropsWithChildren): React.JSX.Element {
   const [gatewayAddress, setGatewayAddressState] = useState(initialAddress);
-  const [discoveryState, setDiscoveryState] = useState<DiscoveryState>('searching');
-  const [connectedBase, setConnectedBase] = useState(normalizeHttpBase(initialAddress));
+  const [discoveryState, setDiscoveryState] = useState<DiscoveryState>('manual');
+  const [connectedBase, setConnectedBase] = useState(normalizeGatewayHttpBase(initialAddress));
   const [gatewayState, setGatewayState] = useState<GatewayState>('未连接');
   const [sessionReady, setSessionReady] = useState(false);
-  const [lastMessage, setLastMessage] = useState('正在查找同一 Wi-Fi 中的 Jetson 网关…');
+  const [lastMessage, setLastMessage] = useState('请选择开发板并输入 Ubuntu 密码');
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [authToken, setAuthToken] = useState<string>();
   const [selectedTopic, setSelectedTopic] = useState<ImageTopic>();
@@ -100,7 +94,8 @@ export function GatewayProvider({ children }: React.PropsWithChildren): React.JS
   const connectionEpoch = useRef(0);
   const discoveryEpoch = useRef(0);
   const discoveryInFlight = useRef(false);
-  const manualAddressRef = useRef(false);
+  // 固定地址为默认选择；只有点击“重新查找”才允许发现结果改写它。
+  const manualAddressRef = useRef(true);
   const gatewayAddressRef = useRef(gatewayAddress);
   const sessionReadyRef = useRef(sessionReady);
   sessionReadyRef.current = sessionReady;
@@ -143,7 +138,7 @@ export function GatewayProvider({ children }: React.PropsWithChildren): React.JS
     resetRunLatency();
     setImageFrame(undefined);
     setFps(0);
-    const base = normalizeHttpBase(address);
+    const base = normalizeGatewayHttpBase(address);
     const surface: ConnectionSurface = topic ? 'image' : 'gateway';
     setConnectedBase(base);
     if (surface === 'image') {
@@ -382,7 +377,7 @@ export function GatewayProvider({ children }: React.PropsWithChildren): React.JS
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const base = normalizeHttpBase(gatewayAddress);
+      const base = normalizeGatewayHttpBase(gatewayAddress);
       const url = new URL(base);
       if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) throw new Error('请输入有效网关地址');
       const loginResponse = await fetch(`${base}/api/auth/login`, {

@@ -11,14 +11,15 @@ import { useThemeColors } from '@/ui/tokens';
 
 function PhoneTelemetryStartup(): null {
   const { sessionReady } = useGateway();
-  const { connect } = useRosbridge();
+  const { connect, disconnect } = useRosbridge();
   const { startAll } = usePhoneSensors();
   useEffect(() => {
-    if (!sessionReady) return;
+    // 切换网关时先断开旧开发板的 ROS 连接，避免手机数据继续发往旧地址。
+    if (!sessionReady) { disconnect(); return; }
     // 网关连接后即开始向 Jetson 发布手机传感器数据，地图页也可离线单独启动。
     connect();
     startAll();
-  }, [connect, sessionReady, startAll]);
+  }, [connect, disconnect, sessionReady, startAll]);
   return null;
 }
 

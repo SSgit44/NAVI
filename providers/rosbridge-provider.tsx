@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import { useGateway } from './gateway-provider';
 import { RosbridgeClient, type RosbridgeConnectionState } from '@/services/rosbridge/rosbridge-client';
 import { normalizeRosbridgeUrl, rosbridgeUrlFromGateway, type RosbridgeSubscribeOptions } from '@/services/rosbridge/protocol';
+import { DEFAULT_GATEWAY_ADDRESS } from '@/services/gateway-address-options';
 
 type RosbridgeContextValue = {
   address: string;
@@ -30,9 +31,15 @@ const RosbridgeContext = React.createContext<RosbridgeContextValue | null>(null)
 export function RosbridgeProvider({ children }: React.PropsWithChildren): React.JSX.Element {
   const gateway = useGateway();
   const configuredAddress = process.env.EXPO_PUBLIC_ROSBRIDGE_URL?.trim();
-  const [address, setAddressState] = useState(
-    configuredAddress || rosbridgeUrlFromGateway(gateway.gatewayAddress),
-  );
+  const [address, setAddressState] = useState(() => {
+    if (configuredAddress) return configuredAddress;
+    try {
+      // 自定义地址编辑期间可能为空或只输入了一部分；初始地址仅在挂载时推导。
+      return rosbridgeUrlFromGateway(gateway.gatewayAddress);
+    } catch {
+      return rosbridgeUrlFromGateway(DEFAULT_GATEWAY_ADDRESS);
+    }
+  });
   const [connectionState, setConnectionState] = useState<RosbridgeConnectionState>('idle');
   const [lastError, setLastError] = useState<string>();
   const addressRef = useRef(address);
