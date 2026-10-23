@@ -7,6 +7,7 @@ import { MonitorProvider } from '@/providers/monitor-provider';
 import { GatewayProvider, useGateway } from '@/providers/gateway-provider';
 import { PhoneSensorsProvider, usePhoneSensors } from '@/providers/phone-sensors-provider';
 import { RosbridgeProvider, useRosbridge } from '@/providers/rosbridge-provider';
+import { VehicleNavigationProvider } from '@/providers/vehicle-navigation-provider';
 import { useThemeColors } from '@/ui/tokens';
 
 function PhoneTelemetryStartup(): null {
@@ -43,6 +44,7 @@ export default function RootLayout(): React.JSX.Element {
         <GatewayProvider>
           <RosbridgeProvider>
             <PhoneSensorsProvider>
+              <VehicleNavigationProvider>
               <PhoneTelemetryStartup />
               <MonitorProvider>
                 <StatusBar barStyle={light ? 'dark-content' : 'light-content'} />
@@ -54,6 +56,7 @@ export default function RootLayout(): React.JSX.Element {
                   <Stack.Screen name="+not-found" options={{ title: '页面不存在' }} />
                 </Stack>
               </MonitorProvider>
+              </VehicleNavigationProvider>
             </PhoneSensorsProvider>
           </RosbridgeProvider>
         </GatewayProvider>

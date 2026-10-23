@@ -42,3 +42,11 @@ npx tsc --noEmit
 npm run lint
 node --test services/*.test.cjs services/phone-sensors/*.test.cjs services/navigation/*.test.cjs services/rosbridge/*.test.cjs
 ```
+
+## 轮椅地图终点导航
+
+新增 `VehicleNavigationProvider` 在根布局持有车辆任务和实测定位转换，离开地图页仍保持前台任务心跳；进入后台、断线或开发板会话变更会停止本机任务，重连不自动启动。地图下方“开始轮椅导航 / 停止轮椅”与原手机定位统计分开，开发板反馈才表示实际车辆任务状态。
+
+新增 `/phone/navigation/fix`（GCJ-02 实测位置、原 GPS 时间/精度、真北航向及其采样时间/校准等级）、`/phone/navigation/command`（start/heartbeat/cancel，绑定开发板会话和独立任务编号）、`/wheel/navigation/feedback`。开始命令内嵌完整路线，避免路线与开始跨话题顺序问题。底盘连续调速、终点容差、手机固定安装和相机外参在轮椅工程配置；首版只执行沿当前巡线道路的短直路段，不负责路口选向。
+
+需要同步更新 `2026-WheelChair-CUDA` 的 `wheel_msgs`、`wheel_navigation` 和 `wheel_perception` 并重新构建 APP。详见轮椅工程 `NAVIGATION_DEPLOYMENT.md`。已有 `/phone/navigation/route`、`status` 字段仍保留手机统计语义，不直接触发车辆运动。

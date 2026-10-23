@@ -7,6 +7,8 @@ import { useRosbridge } from '@/providers/rosbridge-provider';
 import { loadAmapCredentials, type AmapCredentials } from '@/services/amap-credentials';
 import { NavigationPublisher, type NavigationEvent, type PublishReceipt } from '@/services/navigation/navigation-publisher';
 import { ActionButton, StatusBanner } from '@/ui/primitives';
+import { useVehicleNavigation } from '@/providers/vehicle-navigation-provider';
+import type { NavigationRoute } from '@/services/navigation/route-geometry';
 import { spacing, useThemeColors } from '@/ui/tokens';
 
 export default function MapScreen(): React.JSX.Element {
@@ -14,14 +16,21 @@ export default function MapScreen(): React.JSX.Element {
   const colors = useThemeColors();
   const [credentials, setCredentials] = useState<AmapCredentials>();
   const [webError, setWebError] = useState('');
+  const [selectedRoute, setSelectedRoute] = useState<NavigationRoute | null>(null);
+  const [vehicleError, setVehicleError] = useState('');
+  const vehicle = useVehicleNavigation();
+  const stopVehicle = vehicle.stop;
   const { connect, connectionState, advertiseTopic, unadvertiseTopic, publishTopic } = useRosbridge();
   const navigationPublisher = useMemo(() => new NavigationPublisher({ advertiseTopic, unadvertiseTopic, publishTopic }),
     [advertiseTopic, unadvertiseTopic, publishTopic]);
   useEffect(() => { navigationPublisher.setConnected(connectionState === 'connected'); }, [connectionState, navigationPublisher]);
   useEffect(() => () => navigationPublisher.dispose(), [navigationPublisher]);
-  const onNavigationEvent = useCallback(async (event: NavigationEvent): Promise<PublishReceipt> => (
-    navigationPublisher.handle(event)
-  ), [navigationPublisher]);
+  const onNavigationEvent = useCallback(async (event: NavigationEvent): Promise<PublishReceipt> => {
+    if (event.kind === 'route' || event.kind === 'start') setSelectedRoute(event.route);
+    if (event.kind === 'clear') setSelectedRoute(null);
+    if (event.kind === 'route' || event.kind === 'clear' || event.kind === 'stop') stopVehicle();
+    return navigationPublisher.handle(event);
+  }, [navigationPublisher, stopVehicle]);
   const {
     gpsStatus,
     latestGps,
@@ -84,6 +93,20 @@ export default function MapScreen(): React.JSX.Element {
         }}
       />
       </View>}
+      <View style={{ padding: spacing.md, gap: spacing.sm, backgroundColor: colors.grouped }}>
+        <Text style={{ color: colors.secondaryLabel, fontSize: 12 }}>轮椅沿当前道路巡线；手机需固定安装并保持前台。</Text>
+        <Text selectable style={{ color: colors.label }}>{vehicleError || vehicle.message}
+          {vehicle.feedback?.remaining_m !== null && vehicle.feedback?.remaining_m !== undefined
+            ? ` · 开发板剩余 ${vehicle.feedback.remaining_m.toFixed(1)} 米` : ''}</Text>
+        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+          <ActionButton label="开始轮椅导航" disabled={!selectedRoute || vehicle.active || connectionState !== 'connected'} onPress={() => {
+            if (!selectedRoute) return;
+            try { vehicle.start(selectedRoute); setVehicleError(''); }
+            catch (error) { setVehicleError(error instanceof Error ? error.message : '任务发送失败'); }
+          }} />
+          <ActionButton label="停止轮椅" destructive onPress={() => { vehicle.stop(); setVehicleError(''); }} />
+        </View>
+      </View>
       <View style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.grouped }}>
         <Text selectable style={{ color: colors.secondaryLabel, fontSize: 12 }}>{gpsStatus} · {connectionState === 'connected' ? 'Jetson ROS 已连接' : 'Jetson ROS 未连接'}</Text>
       </View>

@@ -679,7 +679,7 @@ export default function AmapLocationMap({
           <p className="route-caption">北为 0° · 顺时针{status.nextWaypoint === null && status.fixState === 'fresh' ? ' · 已到路线末端' : ''}</p>
           {status.fixState !== 'fresh' ? <p className="map-message" role="status">{navigationFixMessage(status.fixState, sample, clockNow)}</p> : null}
           {visibleMessage ? <p className="map-message" role="status">{visibleMessage}</p> : null}
-          <div className="route-actions"><button type="button" className="stop-navigation" onClick={stopNavigation}>停止导航</button></div>
+          <div className="route-actions"><button type="button" className="stop-navigation" onClick={stopNavigation}>停止统计并取消轮椅任务</button></div>
         </> : <>
         <div className="route-header"><h2>路线规划</h2><span className="route-mode">自行车</span></div>
         <p className="route-caption">从当前位置出发，搜索目的地或轻点地图选终点。</p>
@@ -717,7 +717,7 @@ export default function AmapLocationMap({
         {visibleMessage ? <p className="map-message" role="status">{visibleMessage}</p> : null}
         {routeMessage ? <p className="route-error" role="alert">{routeMessage}</p> : null}
         <div className="route-actions">
-          {route ? <button type="button" className="primary" onClick={startNavigation} disabled={!sample || !usableFix(sample, clockNow)}>开始导航</button> : null}
+          {route ? <button type="button" className="primary" onClick={startNavigation} disabled={!sample || !usableFix(sample, clockNow)}>开始手机定位统计</button> : null}
           <button type="button" className={route ? 'secondary' : 'primary'} onClick={() => void planRoute()} disabled={!canPlan}>
             {routeState === 'loading' ? '正在规划…' : routeState === 'error' ? '重试规划' : route ? '重新规划' : '规划路线'}
           </button>
