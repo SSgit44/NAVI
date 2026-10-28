@@ -5,6 +5,7 @@ import { AppState } from 'react-native';
 import { closeStatusTarget, ConnectionSurface } from '@/connectionStatus';
 import { FrameMetadata, LatencySummary, LatencyTracker } from '@/latency';
 import { discoverGateway } from '@/services/gateway-discovery';
+import { DEFAULT_GATEWAY_ADDRESS, normalizeGatewayHttpBase } from '@/services/gateway-address-options';
 
 export type GatewayState = '未连接' | '连接中' | '已连接' | '错误';
 export type DiscoveryState = 'searching' | 'found' | 'manual';
@@ -36,7 +37,6 @@ export type GatewayContextValue = {
   capabilities: string[];
   authToken?: string;
   checkGateway: (password: string) => Promise<void>;
-  requestPower: (password: string, action: 'reboot' | 'poweroff') => Promise<void>;
   disconnect: () => void;
   selectedTopic?: ImageTopic;
   topics: ImageTopic[];
@@ -58,14 +58,7 @@ export type GatewayContextValue = {
 
 declare const process: { env: { EXPO_PUBLIC_GATEWAY_ADDRESS?: string } };
 
-const GATEWAY_PORT = 8080;
-const FALLBACK_GATEWAY_ADDRESS = `192.168.1.100:${GATEWAY_PORT}`;
 const LAST_GATEWAY_STORAGE_KEY = 'last-jetson-gateway-address';
-
-function normalizeHttpBase(value: string): string {
-  const trimmed = value.trim().replace(/\/$/, '');
-  return trimmed.startsWith('http://') || trimmed.startsWith('https://') ? trimmed : `http://${trimmed}`;
-}
 
 function websocketUrl(httpBase: string, topic?: ImageTopic): string {
   const query = topic
@@ -75,17 +68,17 @@ function websocketUrl(httpBase: string, topic?: ImageTopic): string {
 }
 
 const configuredAddress = process.env.EXPO_PUBLIC_GATEWAY_ADDRESS?.trim();
-const initialAddress = configuredAddress || FALLBACK_GATEWAY_ADDRESS;
+const initialAddress = configuredAddress || DEFAULT_GATEWAY_ADDRESS;
 
 const GatewayContext = React.createContext<GatewayContextValue | null>(null);
 
 export function GatewayProvider({ children }: React.PropsWithChildren): React.JSX.Element {
   const [gatewayAddress, setGatewayAddressState] = useState(initialAddress);
-  const [discoveryState, setDiscoveryState] = useState<DiscoveryState>('searching');
-  const [connectedBase, setConnectedBase] = useState(normalizeHttpBase(initialAddress));
+  const [discoveryState, setDiscoveryState] = useState<DiscoveryState>('manual');
+  const [connectedBase, setConnectedBase] = useState(normalizeGatewayHttpBase(initialAddress));
   const [gatewayState, setGatewayState] = useState<GatewayState>('未连接');
   const [sessionReady, setSessionReady] = useState(false);
-  const [lastMessage, setLastMessage] = useState('正在查找同一 Wi-Fi 中的 Jetson 网关…');
+  const [lastMessage, setLastMessage] = useState('请选择开发板并输入 Ubuntu 密码');
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [authToken, setAuthToken] = useState<string>();
   const [selectedTopic, setSelectedTopic] = useState<ImageTopic>();
@@ -101,7 +94,8 @@ export function GatewayProvider({ children }: React.PropsWithChildren): React.JS
   const connectionEpoch = useRef(0);
   const discoveryEpoch = useRef(0);
   const discoveryInFlight = useRef(false);
-  const manualAddressRef = useRef(false);
+  // 固定地址为默认选择；只有点击“重新查找”才允许发现结果改写它。
+  const manualAddressRef = useRef(true);
   const gatewayAddressRef = useRef(gatewayAddress);
   const sessionReadyRef = useRef(sessionReady);
   sessionReadyRef.current = sessionReady;
@@ -144,7 +138,7 @@ export function GatewayProvider({ children }: React.PropsWithChildren): React.JS
     resetRunLatency();
     setImageFrame(undefined);
     setFps(0);
-    const base = normalizeHttpBase(address);
+    const base = normalizeGatewayHttpBase(address);
     const surface: ConnectionSurface = topic ? 'image' : 'gateway';
     setConnectedBase(base);
     if (surface === 'image') {
@@ -167,7 +161,7 @@ export function GatewayProvider({ children }: React.PropsWithChildren): React.JS
         if (socketRef.current !== socket) return;
         connectionError = true;
         if (surface === 'image') {
-          setTopicMessage('图像流连接超时，终端与控制功能仍可使用');
+          setTopicMessage('图像流连接超时，终端日志仍可查看');
         } else {
           setGatewayState('错误');
           setLastMessage('连接超时，请检查网关地址和服务版本');
@@ -269,7 +263,7 @@ export function GatewayProvider({ children }: React.PropsWithChildren): React.JS
         if (socketRef.current !== socket) return;
         connectionError = true;
         if (surface === 'image') {
-          setTopicMessage('图像流连接失败，终端与控制功能仍可使用');
+          setTopicMessage('图像流连接失败，终端日志仍可查看');
         } else {
           setGatewayState('错误');
           setLastMessage('无法连接网关，请检查热点、IP 地址和端口');
@@ -283,7 +277,7 @@ export function GatewayProvider({ children }: React.PropsWithChildren): React.JS
           socketRef.current = null;
           if (!connectionError) {
             if (closeStatusTarget(surface) === 'image') {
-              setTopicMessage('图像流连接已断开，终端与控制功能仍可使用');
+              setTopicMessage('图像流连接已断开，终端日志仍可查看');
             } else {
               setGatewayState('未连接');
               setLastMessage('网关连接已断开');
@@ -383,7 +377,7 @@ export function GatewayProvider({ children }: React.PropsWithChildren): React.JS
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const base = normalizeHttpBase(gatewayAddress);
+      const base = normalizeGatewayHttpBase(gatewayAddress);
       const url = new URL(base);
       if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) throw new Error('请输入有效网关地址');
       const loginResponse = await fetch(`${base}/api/auth/login`, {
@@ -399,9 +393,10 @@ export function GatewayProvider({ children }: React.PropsWithChildren): React.JS
       const response = await fetch(`${base}/health`, { signal: controller.signal });
       const result = await response.json();
       if (!response.ok || result.status !== 'ok') throw new Error('网关健康检查失败');
-      const required = ['commands', 'defaults', 'dynamic_defaults', 'history_clear', 'image_topics', 'latency', 'multi_terminal', 'yaml_editor', 'build', 'password_auth', 'system_power'];
+      // 手机监控端只依赖认证、图像话题与终端日志接口。
+      const required = ['commands', 'image_topics', 'password_auth'];
       if (!required.every((name) => result.capabilities?.includes(name))) {
-        throw new Error('请更新并重启 Jetson 网关：当前服务不支持动态启动配置或历史清理');
+        throw new Error('当前 Jetson 网关缺少监控所需接口，请更新网关');
       }
       setCapabilities(Array.isArray(result.capabilities) ? result.capabilities : []);
       if (epoch === connectionEpoch.current) {
@@ -418,21 +413,6 @@ export function GatewayProvider({ children }: React.PropsWithChildren): React.JS
       clearTimeout(timer);
     }
   }, [connectToGateway, disconnect, gatewayAddress]);
-
-  const requestPower = useCallback(async (password: string, action: 'reboot' | 'poweroff'): Promise<void> => {
-    if (!authToken) throw new Error('请先连接并验证 Ubuntu 密码');
-    const response = await fetch(`${connectedBase}/api/system/power`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-      body: JSON.stringify({ password, action }),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : '开发板电源操作失败');
-    setLastMessage(action === 'reboot' ? '已接受重启请求，开发板即将离线' : '已接受关机请求，开发板即将离线');
-    setGatewayState('连接中');
-    setSessionReady(false);
-    disconnect();
-  }, [authToken, connectedBase, disconnect]);
 
   const refreshTopics = useCallback(async (): Promise<void> => {
     const controller = new AbortController();
@@ -497,7 +477,7 @@ export function GatewayProvider({ children }: React.PropsWithChildren): React.JS
   const value: GatewayContextValue = {
     gatewayAddress, setGatewayAddress, discoveryState, rediscoverGateway,
     connectedBase, gatewayState, sessionReady, lastMessage, capabilities, authToken,
-    checkGateway, requestPower, disconnect, selectedTopic, topics, topicName, setTopicName, topicType, setTopicType,
+    checkGateway, disconnect, selectedTopic, topics, topicName, setTopicName, topicType, setTopicType,
     topicMessage, refreshTopics, selectTopic, imageFrame, fps, latency, lastLatencyAt, debugNow,
     onFrameLoaded, resetRunLatency,
   };

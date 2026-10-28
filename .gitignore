@@ -5,3 +5,4 @@
 .expo/
 node_modules/
 __pycache__/
+.vscode/browse.vc.db
